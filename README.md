@@ -1,1 +1,264 @@
-# FinalProject
+# Prediccion Temprana de Sepsis Neonatal en Niños Prematuros (UCIN)
+
+Prototipo de solución analítica end-to-end de Machine Learning y arquitectura MLOps para la estimación del riesgo de sepsis neonatal en unidades de cuidado intensivo neonatal.
+
+---
+
+## 1. Definicion del Problema y Contexto de Negocio
+
+### 1.1 Problema Principal
+En las Unidades de Cuidado Intensivo Neonatal (UCIN), la sepsis neonatal es una de las condiciones de deterioro mas criticas y de mayor impacto en la morbimortalidad de los recien nacidos, especialmente en prematuros. Corresponde a una infeccion generalizada grave en los primeros 28 dias de vida, dividida en precoz (primeros 3 dias, por contagio materno) y tardia (posterior a 3 dias, por el entorno hospitalario). Predecir de forma temprana esta condicion a partir de variables prenatales y del parto permite aislar y tratar preventivamente al paciente, optimizando los desenlaces clinicos y la asignacion de recursos.
+
+### 1.2 Pregunta de Negocio
+¿Como estimar probabilisticamente el riesgo de que un bebe prematuro desarrolle sepsis neonatal a partir de sus condiciones de nacimiento y antecedentes maternos, con el fin de optimizar la intervencion medica temprana y la asignacion de recursos de la Unidad de Cuidados Intensivos Neonatales?
+
+### 1.3 Alcance del Proyecto
+El proyecto contempla el desarrollo de un prototipo funcional que abarca:
+- Versionado de datos con DVC conectado a un almacenamiento remoto S3.
+- Exploracion de datos (EDA) y preprocesamiento estructurado.
+- Entrenamiento y versionado de modelos supervisados mediante MLflow.
+- Despliegue de un microservicio API RESTful en FastAPI para servir inferencias.
+- Desarrollo de una interfaz de usuario interactiva en Streamlit para el personal medico de la UCIN.
+- Empaquetamiento y orquestacion con Docker y Docker Compose.
+
+---
+
+## 2. Conjunto de Datos
+
+- **Nombre:** Dataset on neonatal and maternal factors influencing neurodevelopmental outcomes in preterm infants.
+- **Origen:** Estudio de cohorte retrospectivo en el Hospital Ghaem (Mashhad, Iran), neonatos hospitalizados entre 2016 y 2020.
+- **Tamaño:** 89 registros de neonatos prematuros.
+- **Variables:** Antecedentes maternos (diabetes mellitus, preeclampsia, hipotiroidismo), condiciones neonatales (peso al nacer, edad gestacional, sexo, apgar), complicaciones hospitalarias e intervenciones clinicas.
+- **Variable Objetivo (Target):** `sepsis` (ocurrencia de sepsis durante la hospitalizacion).
+- **Fuentes:** [Mendeley Data](https://data.mendeley.com/datasets/h464gsf77t/2) | [Articulo cientifico asociado](https://www.sciencedirect.com/science/article/pii/S2352340924000325)
+
+---
+
+## 3. Arquitectura del Sistema
+
+### 3.1 Diagrama de Arquitectura MLOps y Contenedores
+
+```mermaid
+flowchart TD
+    subgraph Almacenamiento_y_Versionado["Almacenamiento y Versionado"]
+        S3["Bucket AWS S3"]
+        DVC["DVC Remote Data Tracker"]
+        MLflow_Server["MLflow Tracking Server"]
+        S3 <--> DVC
+    end
+
+    subgraph Desarrollo_y_Pipelines["Desarrollo y Pipelines"]
+        RAW["data/raw/ (.xlsx, .sav)"] --> PRE["src/data/ (Preprocesamiento)"]
+        PRE --> FEAT["src/features/ (Feature Engineering)"]
+        FEAT --> TRAIN["src/models/ (Entrenamiento)"]
+        TRAIN --> MLflow_Server
+        TRAIN --> MODEL_ART["Artefacto del Modelo (.pkl / .joblib)"]
+    end
+
+    subgraph Servicios_y_Despliegue["Servicios y Despliegue (Docker Compose)"]
+        MODEL_ART --> API["FastAPI Backend (api/main.py)"]
+        API <--> ST["Streamlit Dashboard (dashboard/app.py)"]
+        USER["Personal Medico UCIN"] <--> ST
+    end
+```
+
+### 3.2 Flujo de Datos para Inferencia Clinica
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Medico as Personal Medico (UCIN)
+    participant Dashboard as Streamlit Dashboard
+    participant API as FastAPI Backend
+    participant Model as Modelo Predictivo (Scikit-Learn)
+
+    Medico->>Dashboard: Ingresa variables neonatales y maternas
+    Dashboard->>API: POST /predict (Payload JSON)
+    API->>API: Validacion de esquema mediante Pydantic
+    API->>Model: Procesa vector de caracteristicas
+    Model-->>API: Retorna probabilidad estimada p
+    API->>API: Calcula Score (0-100) y Categoria Cualitativa
+    API-->>Dashboard: Respuesta JSON (Score, Nivel de Riesgo, Diagnostico)
+    Dashboard-->>Medico: Muestra indicador grafico de riesgo y alertas
+```
+
+---
+
+## 4. Guia de Instalacion y Configuraracion del Repositorio (Setup)
+
+### 4.1 Prerrequisitos
+- Python 3.12
+- Gestor de paquetes `uv` (version >= 0.1.0)
+- Git y DVC
+- Docker y Docker Compose (opcional para entorno local, requerido para despliegue)
+
+### 4.2 Instalacion y Gestion del Entorno con uv
+
+El proyecto utiliza `uv` como gestor de paquetes y entornos de alto rendimiento con Python 3.12:
+
+1. Clonar el repositorio y posicionarse en la rama de trabajo:
+```bash
+git clone https://github.com/MAIA-FinalProject/Microproyecto.git
+cd Microproyecto
+git checkout chore/semana3
+```
+
+2. Crear e inicializar el entorno virtual con `uv`:
+```bash
+uv venv .venv --python 3.12
+```
+
+3. Instalar las dependencias del proyecto y el grupo de desarrollo:
+```bash
+uv pip install -e .[dev]
+```
+
+4. Instalar los hooks de `pre-commit`:
+```bash
+uv run pre-commit install
+```
+
+### 4.3 Orquestacion de Tareas con PoeThePoet (Task Runner)
+
+El proyecto incluye tareas automatizadas configuradas en `pyproject.toml` para estandarizar el flujo de trabajo del equipo:
+
+- **Verificacion completa de calidad de codigo (Ruff Linter + Ruff Formatter + Mypy Types):**
+  ```bash
+  uv run poe check
+  ```
+- **Ejecutar suite de pruebas unitarias con cobertura:**
+  ```bash
+  uv run poe test
+  ```
+- **Formatear y corregir estilo de codigo con Ruff:**
+  ```bash
+  uv run poe format
+  ```
+- **Corregir automaticamente errores de linting:**
+  ```bash
+  uv run poe lint-fix
+  ```
+- **Iniciar servidor backend de desarrollo (FastAPI):**
+  ```bash
+  uv run poe dev-api
+  ```
+- **Iniciar interfaz de usuario de desarrollo (Streamlit):**
+  ```bash
+  uv run poe dev-dashboard
+  ```
+
+### 4.4 Variables de Entorno
+
+Copiar el archivo de plantilla `.env.example` a `.env` y configurar las credenciales de AWS S3 y MLflow:
+```bash
+cp .env.example .env
+```
+
+---
+
+## 5. Diseño del Prototipo y Mockup del Tablero (UI/UX)
+
+La interfaz grafica esta diseñada orientada a la toma de decisiones clinicas rapidas en la UCIN. Se divide en dos modulos funcionales principal y secundario:
+
+```
++-----------------------------------------------------------------------------------+
+| MLOPS UCIN - TABLERO DE PREDICCION DE SEPSIS NEONATAL                            |
++---------------------------------------------------+-------------------------------+
+| BARRA LATERAL (CONFIGURACION Y PACIENTE)         | PANEL PRINCIPAL               |
+|                                                   |                               |
+| [Conexion API Backend]                            | TAB 1: EVALUACION PREDICTIVA  |
+| URL: http://localhost:8000                        | ----------------------------- |
+| Estado: Conectado (API v0.1.0)                    |                               |
+|                                                   | [PUNTAJE DE RIESGO DE SEPSIS] |
+| [Datos Maternos]                                  |  +-------------------------+  |
+| - Edad Materna: [ 28 ]                            |  |   PUNTAJE: 82 / 100     |  |
+| - Diabetes Mellitus: ( ) Si  (X) No               |  |   CATEGORIA: RIESGO ALTO |  |
+| - Preeclampsia:      (X) Si  ( ) No               |  +-------------------------+  |
+| - Hipotiroidismo:    ( ) Si  (X) No               |                               |
+|                                                   | Probabilidad Estimada: 82.4%  |
+| [Datos Neonatales]                                |                               |
+| - Peso al nacer (g): [ 1250 ]                     | [Recomendacion Clinica UCIN]  |
+| - Edad Gestacional (semanas): [ 30 ]              | Alerta: Se sugiere aislamiento|
+| - Tipo de parto: [ Cesarea      v ]               | preventivo y monitoreo continuo|
+| - Apgar minuto 1: [ 6 ]                           | de hemograma y reactivos.     |
+| - Sexo: [ Masculino v ]                           |                               |
+|                                                   | ----------------------------- |
+| [ BOTON: CALCULAR RIESGO ]                        | TAB 2: EXPLORACION POBLACIONAL|
+|                                                   | - Grafico Peso vs Sepsis      |
+|                                                   | - Distribucion por Edad Gest. |
++---------------------------------------------------+-------------------------------+
+```
+
+### Elementos y Relacion con la Pregunta de Negocio:
+1. **Ingreso Clinico Agil:** Permite ingresar los antecedentes maternos y neonatales en menos de 1 minuto desde la admisión del recién nacido.
+2. **Puntaje Estandarizado (0 - 100):** Transforma la probabilidad matematica continua en una escala facil de interpretar por el personal de enfermeria y medicos especialistas.
+3. **Clasificacion Cualitativa por Rangos de Riesgo:**
+   - **Bajo (0 - 25):** Monitoreo estandar de la unidad.
+   - **Moderado (26 - 50):** Monitoreo estrecho de signos vitales.
+   - **Alto (51 - 75):** Alerta clinica y evaluacion de hemocultivos.
+   - **Critico (76 - 100):** Protocolo de aislamiento preventivo y tratamiento precoz.
+4. **Modulo Descriptivo DataViz:** Proporciona contexto historico de la cohorte para analizar patrones de sepsis segun edad gestacional y peso al nacer.
+
+---
+
+## 6. Estructura del Repositorio
+
+```
+.
+├── .github/
+│   └── workflows/              # Workflows de CI/CD para GitHub Actions
+├── data/
+│   ├── raw/                    # Datos crudos (.xlsx, .sav, codebook .pdf - Trackeado por DVC)
+│   ├── processed/              # Datos limpios y transformados
+│   └── features/               # Matriz de caracteristicas para modelado
+├── notebooks/                  # Notebooks Jupyter para EDA y experimentacion
+├── src/                        # Codigo fuente modular de Python
+│   ├── __init__.py
+│   ├── config.py               # Configuración centralizada (Pydantic Settings)
+│   ├── data/                   # Modulos de carga y limpieza de datos
+│   ├── features/               # Modulos de ingenieria de caracteristicas
+│   └── models/                 # Modulos de entrenamiento, evaluacion e inferencia
+├── api/                        # Microservicio Backend (FastAPI)
+│   ├── __init__.py
+│   ├── main.py                 # Puntos de entrada REST API y validacion Pydantic
+│   └── Dockerfile              # Imagen Docker del Backend
+├── dashboard/                  # Interfaz de Usuario Frontend (Streamlit)
+│   ├── app.py                  # Aplicacion principal del tablero
+│   └── Dockerfile              # Imagen Docker del Dashboard
+├── tests/                      # Suite de pruebas unitarias y de integracion
+│   ├── __init__.py
+│   └── test_api.py
+├── deploy/                     # Orquestacion de contenedores
+│   └── docker-compose.yml
+├── .env.example                # Plantilla de variables de entorno
+├── .gitignore                  # Reglas de exclusion de Git
+├── .pre-commit-config.yaml     # Hooks automatizados de calidad de codigo
+└── pyproject.toml              # Configuracion de dependencias, Ruff, Mypy y Poe tasks
+```
+
+---
+
+## 7. Plan de Trabajo en Equipo y Responsabilidades
+
+| Bloque de Trabajo | Tarea en Repositorio | Entregable Documental |
+| :--- | :--- | :--- |
+| **1 - Setup** | Estructura base del repo (Git, README, carpetas, .gitignore, uv, pyproject.toml) | Seccion "Problema y Contexto" |
+| **2 - Datos** | Configurar DVC, remoto S3 y versionamiento de datos | Seccion "Conjunto de Datos" |
+| **3 - EDA General** | Carga de datos, analisis de nulos y distribuciones generales en notebooks | Seccion "Hallazgos del EDA (Parte 1)" |
+| **4 - EDA Enfocado** | Analisis de correlaciones, prueba de hipótesis y tasa de sepsis por variable | Seccion "Hallazgos del EDA (Parte 2)" |
+| **5 - Prototipo** | Diseñar mockup del tablero y maquetas de la API FastAPI y Streamlit | Seccion "Maqueta y Alcance" |
+| **Transversal** | Integracion continua, revision de codigo, formateo de reporte y consolidacion final | Reporte de Trabajo en Equipo |
+
+---
+
+## 8. Despliegue con Docker Compose
+
+Para desplegar la solucion completa en contenedores aislados:
+
+```bash
+docker-compose -f deploy/docker-compose.yml up --build -d
+```
+
+Servicios expuestos:
+- **FastAPI Backend:** `http://localhost:8000/docs`
+- **Streamlit Dashboard:** `http://localhost:8501`
