@@ -71,7 +71,19 @@ NEURODEV_DOMAIN_VARS = [
     "coarsemotor",
 ]
 
-TARGET = "sepsis"
+# Variables categóricas normal/abnormal por dominio (Escalas Bayley), usadas
+# para construir la variable objetivo compuesta. Ver Sección 1.2 del reporte:
+# sepsis fue descartada como target por desbalance severo (5.6% positivos);
+# esta variable compuesta resultó ser la más balanceada (52.8%).
+DOMAIN_CAT_VARS = [
+    "cog.cat",
+    "lang.cat",
+    "percep.cat",
+    "fine.cat",
+    "coarse.cat",
+]
+
+TARGET = "neurodev_alteration"
 
 # Variables con inconsistencia conocida entre el codebook (escala ordinal
 # 1-3) y los valores reales observados (enteros grandes, p.ej. 204, 820),
@@ -99,6 +111,12 @@ def load_labeled(path: Path = RAW_DATA_PATH) -> pd.DataFrame:
     for col, mapping in value_labels.items():
         if col in df_labeled.columns:
             df_labeled[col] = df_labeled[col].map(mapping).fillna(df_labeled[col])
+
+    # Variable objetivo compuesta: "abnormal" si al menos uno de los 5
+    # dominios de neurodesarrollo (Escalas Bayley) es anormal, "normal" en
+    # caso contrario. Ver Sección 1.2 / 6.5 del reporte para la justificación.
+    is_abnormal = (df_labeled[DOMAIN_CAT_VARS] == "abnormal").any(axis=1)
+    df_labeled[TARGET] = is_abnormal.map({True: "abnormal", False: "normal"})
 
     return df_labeled
 
