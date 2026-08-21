@@ -1,16 +1,20 @@
-# Prediccion Temprana de Sepsis Neonatal en Niños Prematuros (UCIN)
+# NeuroRisk: Predicción Temprana de Alteraciones en el Neurodesarrollo de Neonatos Prematuros
 
-Prototipo de solución analítica end-to-end de Machine Learning y arquitectura MLOps para la estimación del riesgo de sepsis neonatal en unidades de cuidado intensivo neonatal.
+Prototipo de solución analítica end-to-end de Machine Learning y arquitectura MLOps para la estimación del riesgo de alteración del neurodesarrollo en neonatos prematuros.
 
 ---
 
 ## 1. Definicion del Problema y Contexto de Negocio
 
 ### 1.1 Problema Principal
-En las Unidades de Cuidado Intensivo Neonatal (UCIN), la sepsis neonatal es una de las condiciones de deterioro mas criticas y de mayor impacto en la morbimortalidad de los recien nacidos, especialmente en prematuros. Corresponde a una infeccion generalizada grave en los primeros 28 dias de vida, dividida en precoz (primeros 3 dias, por contagio materno) y tardia (posterior a 3 dias, por el entorno hospitalario). Predecir de forma temprana esta condicion a partir de variables prenatales y del parto permite aislar y tratar preventivamente al paciente, optimizando los desenlaces clinicos y la asignacion de recursos.
+La prematurez y el bajo peso al nacer son factores de riesgo bien establecidos para alteraciones del neurodesarrollo a mediano y largo plazo, afectando los dominios cognitivo, de lenguaje, perceptual y motor (fino y grueso). A diferencia de complicaciones agudas que se resuelven durante la hospitalizacion, estas alteraciones se consolidan progresivamente durante los primeros anios de vida, lo cual abre una ventana real de intervencion temprana (estimulacion, seguimiento prioritario) si se logra identificar oportunamente que neonatos estan en mayor riesgo.
+
+Este proyecto busca predecir, a partir de variables clinicas tempranas (maternas, del parto y de la hospitalizacion neonatal), si un neonato prematuro presentara alguna alteracion del neurodesarrollo, evaluada mediante las Escalas Bayley de Desarrollo Infantil en los dominios cognitivo, de lenguaje, perceptual, motor fino y motor grueso.
+
+**Seleccion del problema basada en el EDA:** durante la exploracion inicial de datos se considero la sepsis neonatal como variable objetivo. Sin embargo, el analisis de distribucion mostro un desbalance severo (solo 5 de 89 casos positivos, 5.6%), insuficiente para entrenar y validar un modelo de clasificacion de forma confiable con un dataset de este tamanio. Las variables de alteracion del neurodesarrollo mostraron distribuciones considerablemente mas balanceadas (24.7% a 34.8% por dominio individual, 52.8% al considerar la variable compuesta), por lo cual se definio como variable objetivo del proyecto.
 
 ### 1.2 Pregunta de Negocio
-¿Como estimar probabilisticamente el riesgo de que un bebe prematuro desarrolle sepsis neonatal a partir de sus condiciones de nacimiento y antecedentes maternos, con el fin de optimizar la intervencion medica temprana y la asignacion de recursos de la Unidad de Cuidados Intensivos Neonatales?
+¿Como estimar probabilisticamente el riesgo de que un neonato prematuro presente una alteracion del neurodesarrollo, a partir de sus condiciones de nacimiento y antecedentes maternos, con el fin de priorizar el seguimiento clinico y la intervencion temprana (estimulacion, referencia a especialistas) en los pacientes de mayor riesgo?
 
 ### 1.3 Alcance del Proyecto
 El proyecto contempla el desarrollo de un prototipo funcional que abarca:
@@ -18,7 +22,7 @@ El proyecto contempla el desarrollo de un prototipo funcional que abarca:
 - Exploracion de datos (EDA) y preprocesamiento estructurado.
 - Entrenamiento y versionado de modelos supervisados mediante MLflow.
 - Despliegue de un microservicio API RESTful en FastAPI para servir inferencias.
-- Desarrollo de una interfaz de usuario interactiva en Streamlit para el personal medico de la UCIN.
+- Desarrollo de una interfaz de usuario interactiva en Streamlit para el personal de seguimiento clinico y neurodesarrollo.
 - Empaquetamiento y orquestacion con Docker y Docker Compose.
 
 ---
@@ -27,9 +31,9 @@ El proyecto contempla el desarrollo de un prototipo funcional que abarca:
 
 - **Nombre:** Dataset on neonatal and maternal factors influencing neurodevelopmental outcomes in preterm infants.
 - **Origen:** Estudio de cohorte retrospectivo en el Hospital Ghaem (Mashhad, Iran), neonatos hospitalizados entre 2016 y 2020.
-- **Tamaño:** 89 registros de neonatos prematuros.
-- **Variables:** Antecedentes maternos (diabetes mellitus, preeclampsia, hipotiroidismo), condiciones neonatales (peso al nacer, edad gestacional, sexo, apgar), complicaciones hospitalarias e intervenciones clinicas.
-- **Variable Objetivo (Target):** `sepsis` (ocurrencia de sepsis durante la hospitalizacion).
+- **Tamanio:** 89 registros de neonatos prematuros, 53 variables.
+- **Variables:** Antecedentes maternos (diabetes mellitus, preeclampsia, hipotiroidismo), condiciones neonatales (peso al nacer, edad gestacional, sexo, apgar), complicaciones hospitalarias, intervenciones clinicas y evaluaciones de neurodesarrollo mediante las Escalas Bayley (dominios cognitivo, de lenguaje, perceptual, motor fino y motor grueso).
+- **Variable Objetivo (Target):** `neurodev_alteration`, variable compuesta binaria (`abnormal` si al menos uno de los cinco dominios evaluados resulta anormal, `normal` en caso contrario). El resto de variables, incluyendo `sepsis`, se emplean como predictores.
 - **Fuentes:** [Mendeley Data](https://data.mendeley.com/datasets/h464gsf77t/2) | [Articulo cientifico asociado](https://www.sciencedirect.com/science/article/pii/S2352340924000325)
 
 ---
@@ -58,7 +62,7 @@ flowchart TD
     subgraph Servicios_y_Despliegue["Servicios y Despliegue (Docker Compose)"]
         MODEL_ART --> API["FastAPI Backend (api/main.py)"]
         API <--> ST["Streamlit Dashboard (dashboard/app.py)"]
-        USER["Personal Medico UCIN"] <--> ST
+        USER["Personal de Seguimiento Clinico"] <--> ST
     end
 ```
 
@@ -67,19 +71,19 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Medico as Personal Medico (UCIN)
+    actor Clinico as Personal de Seguimiento Clinico
     participant Dashboard as Streamlit Dashboard
     participant API as FastAPI Backend
     participant Model as Modelo Predictivo (Scikit-Learn)
 
-    Medico->>Dashboard: Ingresa variables neonatales y maternas
+    Clinico->>Dashboard: Ingresa variables neonatales y maternas
     Dashboard->>API: POST /predict (Payload JSON)
     API->>API: Validacion de esquema mediante Pydantic
     API->>Model: Procesa vector de caracteristicas
     Model-->>API: Retorna probabilidad estimada p
     API->>API: Calcula Score (0-100) y Categoria Cualitativa
     API-->>Dashboard: Respuesta JSON (Score, Nivel de Riesgo, Diagnostico)
-    Dashboard-->>Medico: Muestra indicador grafico de riesgo y alertas
+    Dashboard-->>Clinico: Muestra indicador grafico de riesgo y alertas
 ```
 
 ---
@@ -158,46 +162,46 @@ cp .env.example .env
 
 ## 5. Diseño del Prototipo y Mockup del Tablero (UI/UX)
 
-La interfaz grafica esta diseñada orientada a la toma de decisiones clinicas rapidas en la UCIN. Se divide en dos modulos funcionales principal y secundario:
+La interfaz grafica esta diseñada orientada a priorizar el seguimiento clinico y la intervencion temprana en neonatos prematuros. Se divide en dos modulos funcionales principal y secundario:
 
 ```
 +-----------------------------------------------------------------------------------+
-| MLOPS UCIN - TABLERO DE PREDICCION DE SEPSIS NEONATAL                            |
+| NEURORISK - TABLERO DE RIESGO DE ALTERACION DEL NEURODESARROLLO                  |
 +---------------------------------------------------+-------------------------------+
 | BARRA LATERAL (CONFIGURACION Y PACIENTE)         | PANEL PRINCIPAL               |
 |                                                   |                               |
 | [Conexion API Backend]                            | TAB 1: EVALUACION PREDICTIVA  |
 | URL: http://localhost:8000                        | ----------------------------- |
 | Estado: Conectado (API v0.1.0)                    |                               |
-|                                                   | [PUNTAJE DE RIESGO DE SEPSIS] |
+|                                                   | [PUNTAJE DE RIESGO]            |
 | [Datos Maternos]                                  |  +-------------------------+  |
-| - Edad Materna: [ 28 ]                            |  |   PUNTAJE: 82 / 100     |  |
+| - Edad Materna: [ 28 ]                            |  |   PUNTAJE: 68 / 100     |  |
 | - Diabetes Mellitus: ( ) Si  (X) No               |  |   CATEGORIA: RIESGO ALTO |  |
 | - Preeclampsia:      (X) Si  ( ) No               |  +-------------------------+  |
 | - Hipotiroidismo:    ( ) Si  (X) No               |                               |
-|                                                   | Probabilidad Estimada: 82.4%  |
+|                                                   | Probabilidad Estimada: 68.2%  |
 | [Datos Neonatales]                                |                               |
-| - Peso al nacer (g): [ 1250 ]                     | [Recomendacion Clinica UCIN]  |
-| - Edad Gestacional (semanas): [ 30 ]              | Alerta: Se sugiere aislamiento|
-| - Tipo de parto: [ Cesarea      v ]               | preventivo y monitoreo continuo|
-| - Apgar minuto 1: [ 6 ]                           | de hemograma y reactivos.     |
+| - Peso al nacer (g): [ 1250 ]                     | [Recomendacion Clinica]       |
+| - Edad Gestacional (semanas): [ 30 ]              | Priorizar cita con especialis-|
+| - Tipo de parto: [ Cesarea      v ]               | ta en neurodesarrollo e inici-|
+| - Apgar minuto 1: [ 6 ]                           | ar estimulacion temprana.     |
 | - Sexo: [ Masculino v ]                           |                               |
 |                                                   | ----------------------------- |
 | [ BOTON: CALCULAR RIESGO ]                        | TAB 2: EXPLORACION POBLACIONAL|
-|                                                   | - Grafico Peso vs Sepsis      |
+|                                                   | - Grafico Peso vs Alteracion  |
 |                                                   | - Distribucion por Edad Gest. |
 +---------------------------------------------------+-------------------------------+
 ```
 
 ### Elementos y Relacion con la Pregunta de Negocio:
-1. **Ingreso Clinico Agil:** Permite ingresar los antecedentes maternos y neonatales en menos de 1 minuto desde la admisión del recién nacido.
-2. **Puntaje Estandarizado (0 - 100):** Transforma la probabilidad matematica continua en una escala facil de interpretar por el personal de enfermeria y medicos especialistas.
+1. **Ingreso Clinico Agil:** Permite ingresar los antecedentes maternos y neonatales en menos de 1 minuto durante la consulta de seguimiento.
+2. **Puntaje Estandarizado (0 - 100):** Transforma la probabilidad matematica continua en una escala facil de interpretar por el personal de seguimiento.
 3. **Clasificacion Cualitativa por Rangos de Riesgo:**
-   - **Bajo (0 - 25):** Monitoreo estandar de la unidad.
-   - **Moderado (26 - 50):** Monitoreo estrecho de signos vitales.
-   - **Alto (51 - 75):** Alerta clinica y evaluacion de hemocultivos.
-   - **Critico (76 - 100):** Protocolo de aislamiento preventivo y tratamiento precoz.
-4. **Modulo Descriptivo DataViz:** Proporciona contexto historico de la cohorte para analizar patrones de sepsis segun edad gestacional y peso al nacer.
+   - **Bajo (0 - 25):** Seguimiento estandar del programa.
+   - **Moderado (26 - 50):** Seguimiento mas frecuente, atencion a senales de alarma.
+   - **Alto (51 - 75):** Priorizar cita con especialista en neurodesarrollo, iniciar estimulacion temprana.
+   - **Critico (76 - 100):** Referencia inmediata a evaluacion multidisciplinaria y plan de intervencion temprana intensivo.
+4. **Modulo Descriptivo DataViz:** Proporciona contexto historico de la cohorte para analizar patrones de alteracion del neurodesarrollo segun edad gestacional y peso al nacer.
 
 ---
 
@@ -244,8 +248,8 @@ La interfaz grafica esta diseñada orientada a la toma de decisiones clinicas ra
 | :--- | :--- | :--- |
 | **1 - Setup** | Estructura base del repo (Git, README, carpetas, .gitignore, uv, pyproject.toml) | Seccion "Problema y Contexto" |
 | **2 - Datos** | Configurar DVC, remoto S3 y versionamiento de datos | Seccion "Conjunto de Datos" |
-| **3 - EDA General** | Carga de datos, analisis de nulos y distribuciones generales en notebooks | Seccion "Hallazgos del EDA (Parte 1)" |
-| **4 - EDA Enfocado** | Analisis de correlaciones, prueba de hipótesis y tasa de sepsis por variable | Seccion "Hallazgos del EDA (Parte 2)" |
+| **3 - EDA General** | Carga de datos, analisis de nulos y distribuciones generales; identificacion del target compuesto | Seccion "Hallazgos del EDA (Parte 1)" |
+| **4 - EDA Enfocado** | Correlaciones, verificacion de correctedage/Age, surfactant/aggressive.ventilation y pregnancycomplication | Seccion "Hallazgos del EDA (Parte 2)" |
 | **5 - Prototipo** | Diseñar mockup del tablero y maquetas de la API FastAPI y Streamlit | Seccion "Maqueta y Alcance" |
 | **Transversal** | Integracion continua, revision de codigo, formateo de reporte y consolidacion final | Reporte de Trabajo en Equipo |
 
