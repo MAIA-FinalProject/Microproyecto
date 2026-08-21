@@ -92,7 +92,7 @@ TARGET = "neurodev_alteration"
 FLAGGED_INCONSISTENT_VARS = ["correctedage", "Age"]
 
 
-def load_raw(path: Path = RAW_DATA_PATH) -> tuple[pd.DataFrame, dict]:
+def load_raw(path: Path = RAW_DATA_PATH) -> tuple[pd.DataFrame, dict[str, dict[float, str]]]:
     """Lee el .sav crudo y retorna el DataFrame junto con los metadatos
     (incluye las etiquetas de valor originales de SPSS)."""
     df, meta = pyreadstat.read_sav(str(path))
