@@ -1,4 +1,7 @@
 [core]
-    remote = s3remote
+    remote = gdrive_remote
+['remote "gdrive_remote"']
+    url = gdrive://1_MOhMMarnexSg-1RP5826CKW8kM-zDXm
+    gdrive_client_id = 266789019781-gbbs698151ln2ti42c07m740bpbvh5d4.apps.googleusercontent.com
 ['remote "s3remote"']
     url = s3://microproyectogrupo7

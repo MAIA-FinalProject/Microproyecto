@@ -18,7 +18,7 @@ Este proyecto busca predecir, a partir de variables clinicas tempranas (maternas
 
 ### 1.3 Alcance del Proyecto
 El proyecto contempla el desarrollo de un prototipo funcional que abarca:
-- Versionado de datos con DVC conectado a un almacenamiento remoto S3.
+- Versionado de datos con DVC conectado a una carpeta compartida de Google Drive como almacenamiento remoto.
 - Exploracion de datos (EDA) y preprocesamiento estructurado.
 - Entrenamiento y versionado de modelos supervisados mediante MLflow.
 - Despliegue de un microservicio API RESTful en FastAPI para servir inferencias.
@@ -45,10 +45,10 @@ El proyecto contempla el desarrollo de un prototipo funcional que abarca:
 ```mermaid
 flowchart TD
     subgraph Almacenamiento_y_Versionado["Almacenamiento y Versionado"]
-        S3["Bucket AWS S3"]
+        GDrive["Google Drive (Carpeta Compartida)"]
         DVC["DVC Remote Data Tracker"]
         MLflow_Server["MLflow Tracking Server"]
-        S3 <--> DVC
+        GDrive <--> DVC
     end
 
     subgraph Desarrollo_y_Pipelines["Desarrollo y Pipelines"]
@@ -153,10 +153,15 @@ El proyecto incluye tareas automatizadas configuradas en `pyproject.toml` para e
 
 ### 4.4 Variables de Entorno
 
-Copiar el archivo de plantilla `.env.example` a `.env` y configurar las credenciales de AWS S3 y MLflow:
+Copiar el archivo de plantilla `.env.example` a `.env` y configurar las credenciales de MLflow:
 ```bash
 cp .env.example .env
 ```
+
+El remoto de datos usa Google Drive vía DVC con autenticacion OAuth individual
+(no requiere variables de entorno). La primera vez que se corra `dvc pull` o
+`dvc push`, se abrira el navegador para iniciar sesion con la cuenta de Google
+invitada a la carpeta compartida del proyecto.
 
 ---
 
@@ -247,7 +252,7 @@ La interfaz grafica esta diseñada orientada a priorizar el seguimiento clinico 
 | Bloque de Trabajo | Tarea en Repositorio | Entregable Documental |
 | :--- | :--- | :--- |
 | **1 - Setup** | Estructura base del repo (Git, README, carpetas, .gitignore, uv, pyproject.toml) | Seccion "Problema y Contexto" |
-| **2 - Datos** | Configurar DVC, remoto S3 y versionamiento de datos | Seccion "Conjunto de Datos" |
+| **2 - Datos** | Configurar DVC, remoto Google Drive y versionamiento de datos | Seccion "Conjunto de Datos" |
 | **3 - EDA General** | Carga de datos, analisis de nulos y distribuciones generales; identificacion del target compuesto | Seccion "Hallazgos del EDA (Parte 1)" |
 | **4 - EDA Enfocado** | Correlaciones, verificacion de correctedage/Age, surfactant/aggressive.ventilation y pregnancycomplication | Seccion "Hallazgos del EDA (Parte 2)" |
 | **5 - Prototipo** | Diseñar mockup del tablero y maquetas de la API FastAPI y Streamlit | Seccion "Maqueta y Alcance" |
