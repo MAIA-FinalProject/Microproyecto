@@ -1,0 +1,23 @@
+schema: '2.0'
+stages:
+  build_features:
+    cmd: uv run python -m src.features.build_features
+    deps:
+    - path: data/raw
+      hash: md5
+      md5: 0cc18bc28ab140b1a17b106ba463291d.dir
+      size: 133034
+      nfiles: 3
+    - path: src/data/loader.py
+      hash: md5
+      md5: d98c4ce8f45405e5362af429a27a3b9e
+      size: 3857
+    - path: src/features/build_features.py
+      hash: md5
+      md5: 704b47d07044af99f208e2629ceedd9a
+      size: 8795
+    outs:
+    - path: data/features/features.csv
+      hash: md5
+      md5: 76819b16b882582cb0551bea297031c9
+      size: 18440
