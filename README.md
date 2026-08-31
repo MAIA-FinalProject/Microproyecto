@@ -158,10 +158,20 @@ Copiar el archivo de plantilla `.env.example` a `.env` y configurar las credenci
 cp .env.example .env
 ```
 
-El remoto de datos usa Google Drive vía DVC con autenticacion OAuth individual
-(no requiere variables de entorno). La primera vez que se corra `dvc pull` o
-`dvc push`, se abrira el navegador para iniciar sesion con la cuenta de Google
-invitada a la carpeta compartida del proyecto.
+El remoto de datos usa Google Drive vía DVC con autenticacion OAuth individual.
+La primera vez que se corra `dvc pull` o `dvc push`, se abrira el navegador
+para iniciar sesion con la cuenta de Google invitada a la carpeta compartida
+del proyecto (debe estar previamente agregada como usuario de prueba en la
+app de Google Cloud del proyecto).
+
+Antes de eso, cada persona debe configurar **una sola vez por maquina** el
+client secret del proyecto (no viaja en el repositorio ni en `.env`, se
+comparte por un canal privado del equipo):
+```bash
+dvc remote modify --local gdrive_remote gdrive_client_secret "<VALOR_COMPARTIDO_POR_EL_EQUIPO>"
+```
+Esto queda guardado en `.dvc/config.local` (ignorado por git). Sin este paso,
+la autenticacion con Drive entra en loop sin completarse.
 
 ---
 
