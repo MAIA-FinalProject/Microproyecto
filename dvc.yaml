@@ -1,0 +1,9 @@
+stages:
+  build_features:
+    cmd: uv run python -m src.features.build_features
+    deps:
+      - src/features/build_features.py
+      - src/data/loader.py
+      - data/raw
+    outs:
+      - data/features/features.csv
