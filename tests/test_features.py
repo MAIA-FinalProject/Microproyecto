@@ -117,8 +117,14 @@ def features_df(synthetic_df: pd.DataFrame) -> pd.DataFrame:
     return build_features(synthetic_df)
 
 
-def test_no_nulls_in_output(features_df: pd.DataFrame) -> None:
-    assert features_df.isna().sum().sum() == 0
+def test_no_unexpected_nulls(features_df: pd.DataFrame) -> None:
+    """Los nulos genuinos se preservan deliberadamente (la imputación se
+    delega al pipeline de modelado, ver PR #15). Solo debe haber nulos en
+    congenital.anomaly (fila con el valor 34.0 recodificado); ninguna
+    otra columna debe tener nulos inesperados."""
+    nulls = features_df.isna().sum()
+    unexpected = nulls[(nulls > 0) & (nulls.index != "congenital.anomaly")]
+    assert unexpected.empty, f"Nulos inesperados en: {unexpected.to_dict()}"
 
 
 def test_all_columns_numeric(features_df: pd.DataFrame) -> None:
@@ -150,8 +156,14 @@ class TestDecision2CongenitalAnomalyFix:
     def test_no_value_34_survives(self, features_df: pd.DataFrame) -> None:
         assert 34.0 not in features_df["congenital.anomaly"].unique()
 
-    def test_congenital_anomaly_is_binary(self, features_df: pd.DataFrame) -> None:
-        assert set(features_df["congenital.anomaly"].unique()).issubset({0, 1})
+    def test_congenital_anomaly_recoded_as_null_not_imputed(
+        self, synthetic_df: pd.DataFrame
+    ) -> None:
+        """La fila con el valor espurio (number=3.0) debe quedar NaN en
+        el output, no rellenada con la moda. Confirma que el fix de
+        leakage (PR #15) realmente preserva el nulo en vez de ocultarlo."""
+        result = build_features(synthetic_df).reset_index(drop=True)
+        assert pd.isna(result.loc[2, "congenital.anomaly"])  # number=3.0
 
 
 class TestDecision3RespiratoryIntervention:
