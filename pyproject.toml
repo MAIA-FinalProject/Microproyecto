@@ -31,12 +31,14 @@ dependencies = [
     "seaborn>=0.13.2",
     "streamlit>=1.35.0",
     "uvicorn[standard]>=0.30.0",
+    "xgboost>=3.4.1",
 ]
 
 [project.optional-dependencies]
 dev = [
     "ipykernel>=7.3.0",
     "mypy>=1.10.0",
+    "nbconvert>=7.17.1",
     "pandas-stubs>=2.2.0",
     "poethepoet>=0.26.0",
     "pre-commit>=3.7.0",
@@ -60,6 +62,8 @@ test = "pytest tests/ --cov=src --cov-report=term-missing"
 pre-commit = "pre-commit run --all-files"
 dev-api = "uvicorn api.main:app --reload --host 0.0.0.0 --port 8000"
 dev-dashboard = "streamlit run dashboard/app.py --server.port 8501"
+mlflow-ui = "mlflow server --backend-store-uri sqlite:///mlflow.db --host 0.0.0.0 --port 5000"
+train = "python -m src.models.train"
 
 # ------------------------------------------------------------------------------
 # Ruff Configuration (Linting & Formatting)
@@ -89,6 +93,8 @@ select = [
 ]
 ignore = [
     "B008", # Do not perform function call in argument defaults (fastapi Depends)
+    "N803", # Argument name should be lowercase (X/X_train: convención estándar de scikit-learn)
+    "N806", # Variable in function should be lowercase (idem)
 ]
 
 [tool.ruff.lint.isort]
@@ -122,5 +128,6 @@ module = [
     "sklearn.*",
     "pyreadstat.*",
     "streamlit.*",
+    "xgboost.*",
 ]
 ignore_missing_imports = true
