@@ -150,6 +150,15 @@ El proyecto incluye tareas automatizadas configuradas en `pyproject.toml` para e
   ```bash
   uv run poe dev-dashboard
   ```
+- **Levantar el servidor local de MLflow (tracking + UI, backend SQLite):**
+  ```bash
+  uv run poe mlflow-ui
+  ```
+  Deja la UI disponible en `http://localhost:5000`. Debe estar corriendo antes de entrenar.
+- **Entrenar los modelos baseline y loguear a MLflow:**
+  ```bash
+  uv run poe train
+  ```
 
 ### 4.4 Variables de Entorno
 

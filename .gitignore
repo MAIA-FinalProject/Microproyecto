@@ -220,3 +220,9 @@ __marimo__/
 # DVC Data Outputs
 data/processed/
 data/features/
+
+# MLflow local tracking store and staged model artifacts
+mlruns/
+mlartifacts/
+mlflow.db
+/models/
