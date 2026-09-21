@@ -58,7 +58,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from mlflow.tracking import MlflowClient
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 load_dotenv()  # lee el .env de la raíz (MLFLOW_TRACKING_URI, MODEL_URI, etc.)
 
@@ -192,6 +192,45 @@ def _find_joblib_artifact(run_id: str) -> str:
 def load_model() -> None:
     global _model, _expected_features, _load_error
 
+    # 1. Si MODEL_URI es una ruta a un archivo existente en disco
+    if MODEL_URI and os.path.isfile(MODEL_URI):
+        try:
+            _model = joblib.load(MODEL_URI)
+            feature_names = getattr(_model, "feature_names_in_", None)
+            _expected_features = (
+                list(feature_names) if feature_names is not None else None
+            )
+            logger.info("Modelo cargado desde archivo local: %s", MODEL_URI)
+            return
+        except Exception as exc:
+            _load_error = f"No se pudo cargar el modelo desde {MODEL_URI}: {exc}"
+            logger.exception(_load_error)
+            return
+
+    # 2. Fallback: Si no se configuró MODEL_URI pero existe un modelo en models/
+    if not MODEL_URI:
+        for candidate in [
+            "models/logistic_regression.joblib",
+            "models/xgboost.joblib",
+            "models/random_forest.joblib",
+        ]:
+            if os.path.isfile(candidate):
+                try:
+                    _model = joblib.load(candidate)
+                    feature_names = getattr(_model, "feature_names_in_", None)
+                    _expected_features = (
+                        list(feature_names) if feature_names is not None else None
+                    )
+                    logger.info("Modelo cargado desde fallback local: %s", candidate)
+                    return
+                except Exception as exc:
+                    logger.warning(
+                        "No se pudo cargar el candidato local %s: %s",
+                        candidate,
+                        exc,
+                    )
+
+    # 3. Carga remota desde MLflow Tracking Server
     if not MLFLOW_TRACKING_URI:
         _load_error = (
             "MLFLOW_TRACKING_URI no está configurada (debería venir del .env, ver #11)."
@@ -199,7 +238,9 @@ def load_model() -> None:
         logger.error(_load_error)
         return
     if not MODEL_URI:
-        _load_error = "MODEL_URI no está configurado (variable de entorno)."
+        _load_error = (
+            "MODEL_URI no está configurado y no se encontraron modelos en models/."
+        )
         logger.error(_load_error)
         return
 
@@ -236,6 +277,12 @@ class PredictRequest(BaseModel):
     PregnancyAge: float
     BirthWeight: float
     apgar5: int
+    duration_hopitalization: float | None = Field(
+        default=None, alias="duration.hopitalization"
+    )
+    duration_o2: float | None = Field(default=None, alias="duration.O2")
+
+    model_config = {"populate_by_name": True}
 
 
 class PredictResponse(BaseModel):
@@ -243,6 +290,7 @@ class PredictResponse(BaseModel):
     score: float
     categoria: str
     recomendacion: str
+    feature_contributions: dict[str, float] = {}
 
 
 class HealthResponse(BaseModel):
@@ -282,6 +330,33 @@ def _positive_class_probability(model: Any, row_df: pd.DataFrame) -> float:
     return float(proba[idx])
 
 
+def _compute_contributions(model: Any, row_df: pd.DataFrame) -> dict[str, float]:
+    """Calcula la contribución de cada variable (valor * coeficiente) usando el
+    pipeline de Scikit-Learn cargado. Ordena el resultado por magnitud descendente."""
+    try:
+        transformed_row = model[:-1].transform(row_df)
+        classifier = model.named_steps["model"]
+        contributions_array = transformed_row[0] * classifier.coef_[0]
+
+        feature_names: list[str]
+        if _expected_features is not None:
+            feature_names = _expected_features
+        else:
+            feature_names = list(row_df.columns)
+
+        raw_map: dict[str, float] = {
+            name: round(float(val), 4)
+            for name, val in zip(feature_names, contributions_array, strict=False)
+        }
+        sorted_map = dict(
+            sorted(raw_map.items(), key=lambda kv: abs(kv[1]), reverse=True)
+        )
+        return sorted_map
+    except Exception as exc:
+        logger.warning("No se pudieron calcular feature_contributions: %s", exc)
+        return {}
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     model_loaded = _model is not None
@@ -303,7 +378,9 @@ def predict(request: PredictRequest) -> PredictResponse:
             status_code=503, detail=_load_error or "Modelo no disponible."
         )
 
-    free_fields = _translate_payload(request.model_dump())
+    free_fields = _translate_payload(
+        request.model_dump(by_alias=True, exclude_none=True)
+    )
     full_payload = {**DEFAULT_VALUES, **free_fields}
 
     if _expected_features is not None:
@@ -337,9 +414,12 @@ def predict(request: PredictRequest) -> PredictResponse:
         ) from exc
 
     score, categoria, recomendacion = _risk_band(probability)
+    contributions: dict[str, float] = _compute_contributions(_model, row_df)
+
     return PredictResponse(
         probability=probability,
         score=score,
         categoria=categoria,
         recomendacion=recomendacion,
+        feature_contributions=contributions,
     )
