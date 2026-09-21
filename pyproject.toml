@@ -23,6 +23,7 @@ dependencies = [
     "numpy>=1.26.0",
     "openpyxl>=3.1.0",
     "pandas>=2.2.0,<3.0.0",
+    "plotly>=5.20.0",
     "pydantic-settings>=2.2.0",
     "pydantic>=2.7.0",
     "pyreadstat>=1.2.0",
@@ -125,6 +126,7 @@ warn_unused_ignores = true
 module = [
     "mlflow.*",
     "dvc.*",
+    "plotly.*",
     "sklearn.*",
     "pyreadstat.*",
     "streamlit.*",
