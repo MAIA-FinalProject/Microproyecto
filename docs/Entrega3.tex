@@ -1,0 +1,305 @@
+\documentclass{llncs}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish,es-nodecimaldot,es-tabla]{babel}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{url}
+
+\renewcommand\UrlFont{\color{blue}\rmfamily}
+\urlstyle{rm}
+
+\raggedbottom
+
+\begin{document}
+
+\title{NeuroRisk: Predicción Temprana de Alteraciones en el Neurodesarrollo de Neonatos Prematuros}
+
+\author{Juan Pablo Buriticá Ruiz \and
+Mateo Hernández Gualdrón \and
+Martín Alejandro Quintero Rincón \and
+Andrés Felipe Romero Grajales \and
+María Paula Saa Beltrán}
+
+\institute{Universidad de los Andes, Maestría en Inteligencia Artificial\\
+Producto de Datos, Micro-proyecto, Entrega 3\\
+Bogotá, Colombia, septiembre de 2026}
+
+\maketitle
+
+% =====================================================================
+\section{Resumen del problema}
+
+\textbf{Contexto.} La prematurez y el bajo peso al nacer son factores de riesgo
+establecidos para alteraciones del neurodesarrollo en los dominios cognitivo, de
+lenguaje, perceptual y motor. Estas alteraciones se consolidan en los primeros
+años de vida, lo que abre una ventana de intervención temprana si se identifica
+a tiempo qué neonatos tienen mayor riesgo.
+
+\textbf{Pregunta de negocio y alcance.} ¿Cuáles neonatos prematuros tienen mayor
+riesgo de presentar una alteración del neurodesarrollo, de modo que el equipo
+clínico pueda priorizar, desde el momento del alta, el seguimiento y la
+intervención temprana en los pacientes que más lo necesitan? La predicción se hace
+\emph{al alta}, cuando ya se conocen las duraciones de hospitalización y de
+oxígeno. El prototipo incluye DVC, MLflow, una API en FastAPI, un tablero en
+Streamlit y despliegue con Docker Compose.
+
+\textbf{Datos.} Cohorte retrospectiva de 89 neonatos prematuros del Hospital
+Ghaem (Mashhad, Irán), 2016 a 2020, con 53 variables maternas, neonatales, de
+intervenciones y de evaluación Bayley \cite{darabi2024,bayley}. El target
+\texttt{neurodev\_alteration} vale 1 si al menos uno de los cinco dominios
+Bayley es anormal (52.8\% de casos positivos). Los desenlaces se midieron en una
+única ronda de evaluación en 2021 \cite{faramarzi2023}, con edades entre 4 meses
+y 3.3 años; por eso \texttt{Age} y \texttt{correctedage} se excluyen como
+predictores (son la edad al desenlace, no información disponible al alta). Al
+provenir de un solo hospital, los resultados no deben asumirse transferibles a
+otros contextos sin validación externa.
+
+\textbf{Cambios respecto a la Entrega 2.} (i) Validación cruzada repetida en
+lugar del holdout de 18 filas, con tuning y un método explícito de selección de
+variables; (ii) modelo final de regresión logística elástica con odds ratios
+reportados; (iii) formulario con \texttt{duration.hopitalization} y
+\texttt{duration.O2}, explicación local del riesgo y listado de priorización;
+(iv) despliegue con Docker Compose y MLflow compartido en EC2. Se corrige además
+el argumento del cambio de target: la prevalencia de sepsis (5/89) es la real de
+la condición, no un defecto del dataset; el problema es que con un split 80/20
+estratificado el conjunto de prueba tendría un solo caso positivo, lo que
+impide estimar recall o ROC-AUC. Por eso se usa un target compuesto y la sepsis
+queda como predictor.
+
+% =====================================================================
+\section{Modelos desarrollados y su evaluación}
+
+\subsection{Preprocesamiento}
+
+El pipeline de features (\texttt{build\_features.py}, registrado como stage de
+DVC) codifica variables binarias y categóricas, corrige un error
+de captura conocido (\texttt{congenital.anomaly = 34.0}, que duplica la edad
+gestacional de la misma fila, se trata como nulo) y combina
+\texttt{surfactant} y \texttt{aggressive.ventilation} (coinciden en 95.5\% de
+los casos) en un solo indicador. La imputación y el escalado
+(\texttt{RobustScaler}) se ajustan dentro de un \texttt{sklearn.Pipeline} solo
+sobre los datos de entrenamiento de cada fold, para evitar fuga de información.
+
+\subsection{Selección de algoritmos}
+
+Se compararon tres familias que cubren supuestos distintos sobre la relación
+entre variables y riesgo:
+\emph{regresión logística}, lineal e interpretable, adecuada cuando hay pocas
+observaciones y relaciones aproximadamente monótonas como las observadas en el
+EDA;
+\emph{Random Forest}, un ensamble por bagging que captura no linealidades e
+interacciones y es robusto con poco ajuste;
+y \emph{XGBoost}, un ensamble por boosting que suele ser el referente en datos
+tabulares. Como variaciones adicionales se probaron pesos de clase, SVM, árboles
+extremadamente aleatorizados, selección de variables con L1 y sobremuestreo con
+SMOTENC. Todo quedó registrado en MLflow (21 runs en el experimento
+\texttt{optimizacion\_modelo\_final}, Figura~\ref{fig:mlflow}).
+
+\subsection{Selección de variables}
+
+Se construyó un ranking combinando cuatro criterios: poder univariado,
+estabilidad de la selección L1 en 200 submuestras, e importancia por permutación
+con dos modelos distintos (\texttt{docs/ranking\_variables.csv}). Tres variables
+dominan y son las únicas con estabilidad L1 alta: \texttt{BirthWeight} (a menor
+peso, mayor riesgo), \texttt{duration.hopitalization} y \texttt{duration.O2} (a
+más días, mayor riesgo). Después el ranking se aplana: siguen
+\texttt{SepsisnegativeCulture}, \texttt{PregnancyAge}, \texttt{IUGR},
+\texttt{icter} y \texttt{BPD}. Varias complicaciones son poco frecuentes
+(\texttt{meningitis} no tiene casos positivos y otras seis variables binarias
+tienen cinco o menos). Esto refleja cómo se comporta el fenómeno en una cohorte
+de 89 neonatos, no un defecto del dato; su consecuencia es que el efecto de
+esas variables se estima con mucha incertidumbre.
+
+\subsection{Validación, tuning y criterio de selección}
+
+Se usó validación cruzada estratificada repetida (5 folds por 3 repeticiones)
+sobre las 89 filas. Maximizar recall con umbral 0.5 resultó engañoso: los
+modelos muy regularizados devolvían probabilidades cercanas a la prevalencia y
+marcaban casi todo como anormal (especificidad de 0.17). Por eso el criterio
+principal es el mayor recall alcanzable exigiendo una precisión mínima de 0.65,
+junto con un control de la dispersión de las probabilidades predichas.
+
+\begin{table}[H]
+\centering
+\caption{Comparación de modelos con validación cruzada estratificada repetida (5$\times$3).}
+\label{tab:modelos}
+\begin{tabular}{|l|c|c|c|}
+\hline
+Modelo & ROC-AUC & Recall (0.5) & Recall (prec. $\geq$ 0.65) \\
+\hline
+Clasificador trivial (siempre anormal) & 0.500 & 1.000 & 0.000 \\
+Baseline regresión logística & 0.602 & 0.518 & 0.383 \\
+Baseline Random Forest & 0.667 & 0.646 & 0.582 \\
+Baseline XGBoost & 0.590 & 0.610 & 0.418 \\
+Random Forest ajustado & 0.723 & 0.637 & 0.766 \\
+\textbf{Regresión logística elástica (final)} & \textbf{0.691} & \textbf{0.623} & \textbf{0.638} \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{mlflow_runs.png}
+\caption{Vista de runs del experimento \texttt{optimizacion\_modelo\_final} en
+el servidor compartido de MLflow en EC2: métricas de validación cruzada (media y
+desviación estándar) por configuración evaluada.}
+\label{fig:mlflow}
+\end{figure}
+
+\subsection{Modelo final}
+
+Se eligió una regresión logística con penalización elástica ($C=0.01$,
+$l_1$\_ratio $=0.05$), reentrenada con las 89 filas y exportada como un único
+\texttt{.joblib} en MLflow. Siete modelos quedaron estadísticamente empatados
+(el error estándar del recall ronda 0.18), y entre ellos se prefirió el más
+parsimonioso e interpretable. El Random Forest ajustado obtiene un recall
+mayor con la restricción de precisión (0.766 frente a 0.638), pero la
+diferencia está dentro del ruido de la validación y no ofrece coeficientes
+interpretables para el equipo clínico; queda documentado como alternativa.
+
+\textbf{Odds ratios.} Ninguna asociación es firme con esta muestra. Solo
+\texttt{sepsis} (OR 2.10, intervalo 1.01 a 3.28, con cinco casos),
+\texttt{PROM} y \texttt{pneumothorax} tienen intervalos que no incluyen 1. Los
+efectos de las variables continuas van en la dirección clínicamente esperada
+(menor peso al nacer y estancias más largas aumentan el riesgo), pero con
+intervalos anchos. La tabla completa está en
+\texttt{notebooks/model\_optimization.ipynb}.
+
+% =====================================================================
+\section{Tablero desarrollado y funcionalidad}
+
+El tablero (\texttt{dashboard/app.py}) consume la API
+(\texttt{api/main.py}), que carga el modelo desde MLflow y expone
+\texttt{GET /health} y \texttt{POST /predict}. Responde a la pregunta de
+negocio con tres funcionalidades:
+
+\textbf{Calculadora de riesgo al alta.} El formulario pide las variables que más
+pesan en el modelo, incluidas \texttt{duration.hopitalization} y
+\texttt{duration.O2}, que en la Entrega 2 se completaban con valores por
+defecto de la cohorte. Esa era una limitación importante: el puntaje quedaba
+dominado por valores que no eran del paciente. Pedir solo \texttt{BirthWeight}
+y las dos duraciones ya sube el ROC-AUC en validación cruzada de 0.65 a 0.72.
+El resultado muestra probabilidad, puntaje de 0 a 100, categoría de riesgo y
+recomendación clínica.
+
+\textbf{Explicación local.} Aprovechando la interpretabilidad del modelo lineal,
+para cada paciente se multiplica el valor escalado de cada variable por su
+coeficiente y se grafican las contribuciones ordenadas por magnitud: en rojo lo
+que sube el riesgo y en verde lo que lo baja (Figura~\ref{fig:tablero}). Como el
+escalado está centrado en la mediana, cada contribución se lee respecto a un
+paciente típico de la cohorte.
+
+\textbf{Priorización.} Una pestaña dedicada, el panel de triaje, consolida los
+neonatos evaluados durante la sesión clínica y los ordena de mayor a menor
+riesgo estimado, con filtros por categoría y exportación a CSV, para decidir a
+quién priorizar en el seguimiento (Figura~\ref{fig:triage}). La pestaña de
+exploración conserva los KPIs descriptivos de la cohorte.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{dashboard_contribuciones.png}
+\caption{Calculadora con la explicación local: variables que empujan el riesgo
+del paciente hacia arriba (rojo) y hacia abajo (verde).}
+\label{fig:tablero}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{dashboard_triage.png}
+\caption{Panel de triaje: neonatos evaluados en la sesión, ordenados por
+riesgo estimado.}
+\label{fig:triage}
+\end{figure}
+
+\textbf{Despliegue.} Docker Compose (\texttt{deploy/docker-compose.yml}) levanta
+dos servicios en una red interna: la API en el puerto 8000 y el tablero en el
+8501, que llama a la API por nombre de servicio (\texttt{http://api:8000}). Se
+montó además un volumen con el \texttt{.joblib} como respaldo, para que el
+despliegue funcione aunque la instancia de EC2 con MLflow esté detenida.
+Durante la verificación se encontró que \texttt{mlflow} sin versión fija
+instalaba la 3.16.1 en el contenedor, cuyo \texttt{list\_artifacts()} devolvía
+una lista vacía y hacía fallar el arranque; se fijó \texttt{mlflow==3.15.1}.
+
+% =====================================================================
+\section{Principales resultados y conclusiones}
+
+\begin{itemize}
+\item El desempeño esperable es modesto: ROC-AUC de 0.69 y recall de 0.64 con
+precisión de 0.65. Con n=89 y un error estándar del recall cercano a 0.18, las
+diferencias entre los mejores modelos no son concluyentes.
+\item La conclusión de la Entrega 2 no se sostuvo. Con el holdout de 18 filas,
+la regresión logística parecía el mejor baseline y el Random Forest parecía
+sobreajustado; con validación cruzada repetida el orden se invierte entre los
+baselines. Un único split pequeño no permite comparar modelos.
+\item El riesgo lo explican sobre todo el peso al nacer y la duración de la
+hospitalización y del oxígeno. Esto es coherente con la literatura y con
+predecir al alta, momento en que esas variables ya se conocen.
+\item Las probabilidades del modelo quedan entre 0.46 y 0.75 por lo débil de la
+señal, así que el puntaje debe leerse de forma relativa (qué paciente está más
+arriba en la cohorte) y no como probabilidad absoluta. Esto respalda el uso
+del listado de priorización sobre el puntaje aislado.
+\item Limitaciones: muestra pequeña de un solo hospital, complicaciones raras
+cuyo efecto no se puede estimar con precisión y ausencia de validación externa.
+Los siguientes pasos serían una cohorte multicéntrica, calibración de
+probabilidades y fijar también la versión de \texttt{scikit-learn} en el
+despliegue para que el artefacto se cargue con la misma versión con que se
+entrenó.
+\end{itemize}
+
+% =====================================================================
+\section{Repositorio y evidencias}
+
+\begin{itemize}
+\item Repositorio: \url{https://github.com/MAIA-FinalProject/Microproyecto}
+(código de datos, features, modelos, API, tablero y artefactos de despliegue).
+\item Datos versionados con DVC, con remoto en Google Drive; el pipeline de
+features está definido como stage en \texttt{dvc.yaml}.
+\item MLflow: servidor en EC2, experimento \texttt{optimizacion\_modelo\_final};
+run del modelo final:\\ \texttt{b234c520c8264c999e98fbf545bc226a}.
+\item Manual de usuario, manual de instalación y video de síntesis:
+\href{https://drive.google.com/file/d/114ZuO4xJnnT2z76jxk2Ibz5pW-Ksr1J5/view}{enlace en Google Drive}.
+\end{itemize}
+
+% =====================================================================
+\section{Reporte de trabajo en equipo}
+
+El trabajo se organizó en issues de GitHub con revisión cruzada obligatoria
+antes de cada merge a \texttt{main}.
+\textbf{Martín Quintero} realizó la optimización y selección del modelo final
+(tuning, estudio de variables, odds ratios y registro en MLflow, \#21) y
+previamente migró el remoto de DVC a Google Drive.
+\textbf{Mateo Hernández} desarrolló la integración del tablero con la API, la
+explicación local de contribuciones, los nuevos campos del formulario y el
+listado de priorización (\#23), además de mantener el repositorio y la CI.
+\textbf{María Paula Saa} integró y verificó el despliegue con Docker Compose y
+corrigió el bug de versión de MLflow (\#22), además del EDA enfocado.
+\textbf{Juan Pablo Buriticá} configuró el servidor de MLflow en EC2 (\#11) y
+elaboró los manuales de usuario e instalación y el video de síntesis (\#25).
+\textbf{Andrés Romero} consolidó el reporte final a partir del feedback y de los
+pull requests (\#24), revisó e integró los PR de modelo final y documentación,
+y previamente desarrolló el EDA general y el pipeline de feature engineering.
+
+\begin{thebibliography}{3}
+
+\bibitem{darabi2024}
+Darabi, A., Faramarzi, R., Boskabadi, H., Maamouri, G., Rezvani, R.:
+Dataset on neonatal and maternal factors influencing neurodevelopmental outcomes
+in preterm infants. Data in Brief \textbf{53}, 110058 (2024).
+\doi{10.1016/j.dib.2024.110058}
+
+\bibitem{faramarzi2023}
+Faramarzi, R., Darabi, A., Emadzadeh, M., Maamouri, G., Rezvani, R.:
+Predicting neurodevelopmental outcomes in preterm infants: a comprehensive
+evaluation of neonatal and maternal risk factors. Early Human Development
+\textbf{184}, 105834 (2023).
+\doi{10.1016/j.earlhumdev.2023.105834}
+
+\bibitem{bayley}
+Bayley, N.: Bayley Scales of Infant and Toddler Development, 3rd edn.
+
+\end{thebibliography}
+
+\end{document}
